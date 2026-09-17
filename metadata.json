@@ -1,0 +1,6 @@
+{
+  "name": "GitHub Code Viewer & Runner",
+  "description": "Frontend-only GitHub repository explorer, Monaco code editor, and in-browser runner for HTML/CSS/JS and React+Vite projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
