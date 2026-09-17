@@ -321,7 +321,7 @@ export async function compileReactViteProject(
 
       const presets: any[] = [];
       if (isTs) {
-        presets.push(['typescript', { isTSX: isJsx, allExtensions: true }]);
+        presets.push('typescript');
       }
       presets.push([
         'react',

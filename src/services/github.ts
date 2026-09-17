@@ -605,7 +605,27 @@ export function analyzeProject(
     }
   }
 
-  // 1. Check for backend server indicators (Express, Node servers, MongoDB, Python, etc.)
+  // 1. Check for React + Vite project first
+  const hasViteConfig = Array.from(filePaths).some((p) =>
+    p.startsWith('vite.config.')
+  );
+  const hasReact = !!(dependencies['react'] || dependencies['react-dom']);
+  const hasVite = !!dependencies['vite'] || hasViteConfig;
+  const hasReactFiles = Array.from(filePaths).some((p) =>
+    p.endsWith('.tsx') || p.endsWith('.jsx')
+  );
+  const hasFrontendStructure =
+    hasReact ||
+    (hasVite && hasReactFiles) ||
+    hasViteConfig ||
+    filePaths.has('src/app.tsx') ||
+    filePaths.has('src/app.jsx') ||
+    filePaths.has('src/main.tsx') ||
+    filePaths.has('src/main.jsx') ||
+    filePaths.has('src/index.tsx') ||
+    filePaths.has('src/index.jsx');
+
+  // Backend server indicators (Express, Node servers, MongoDB, Python, etc.)
   const backendPkgs = [
     'express',
     'mongodb',
@@ -633,12 +653,13 @@ export function analyzeProject(
     'index.js',
     'index.ts',
   ].some((s) => {
-    // If it has express or backend pkg, or is in a server/ folder
     return (
       filePaths.has(s) &&
       (foundBackendPkgs.length > 0 ||
         filePaths.has('server/') ||
-        filePaths.has('backend/'))
+        filePaths.has('backend/') ||
+        s === 'server.ts' ||
+        s === 'server.js')
     );
   });
 
@@ -649,36 +670,8 @@ export function analyzeProject(
     (p) => p.endsWith('.go') || p.endsWith('.java') || p === 'pom.xml'
   );
 
-  if (foundBackendPkgs.length > 0 || (hasServerFiles && foundBackendPkgs.length > 0) || hasPythonBackend || hasJavaOrGoBackend) {
-    const reasons: string[] = [];
-    if (foundBackendPkgs.length > 0) {
-      reasons.push(`Dependencies: ${foundBackendPkgs.join(', ')}`);
-    }
-    if (hasPythonBackend) reasons.push('Python / Django / Flask backend');
-    if (hasJavaOrGoBackend) reasons.push('Go / Java backend');
-
-    return {
-      type: 'unsupported-backend',
-      title: 'Server-side / Backend Application',
-      description:
-        'This repository appears to contain server-side/backend code (e.g. Express, Node.js API, or database connections). Browser-only execution is strictly limited to client-side HTML/JS and React+Vite projects. You can still inspect and edit all code in the Monaco Editor.',
-      isRunnable: false,
-      dependencies,
-      warnings: reasons,
-    };
-  }
-
-  // 2. Check for React + Vite project
-  const hasViteConfig = Array.from(filePaths).some((p) =>
-    p.startsWith('vite.config.')
-  );
-  const hasReact = !!(dependencies['react'] || dependencies['react-dom']);
-  const hasVite = !!dependencies['vite'] || hasViteConfig;
-  const hasReactFiles = Array.from(filePaths).some((p) =>
-    p.endsWith('.tsx') || p.endsWith('.jsx')
-  );
-
-  if (hasReact || (hasVite && hasReactFiles) || hasViteConfig) {
+  // If the repository has a React frontend structure
+  if (hasFrontendStructure) {
     let entry = 'src/main.tsx';
     if (filePaths.has('src/main.jsx')) entry = 'src/main.jsx';
     else if (filePaths.has('src/index.tsx')) entry = 'src/index.tsx';
@@ -687,32 +680,77 @@ export function analyzeProject(
     else if (filePaths.has('src/app.jsx')) entry = 'src/App.jsx';
     else if (filePaths.has('index.html')) entry = 'index.html';
 
+    const hasBackendComponents =
+      foundBackendPkgs.length > 0 || hasServerFiles || hasPythonBackend || hasJavaOrGoBackend;
+
     return {
       type: 'react-vite',
-      title: 'React + Vite Application',
-      description:
-        'Modern client-side React application. Dependencies will be resolved and transpiled directly in-browser using virtual ES module maps and Babel.',
+      title: hasBackendComponents
+        ? 'React + Vite (Full-Stack / Frontend Runnable)'
+        : 'React + Vite Application',
+      description: hasBackendComponents
+        ? 'Full-stack application detected with client-side React UI. The React frontend is fully runnable in the browser runner. (Server-side endpoints in server.ts/express run on backend).'
+        : 'Modern client-side React application. Dependencies will be resolved and transpiled directly in-browser using virtual ES module maps and Babel.',
       entryPoint: entry,
       isRunnable: true,
       dependencies,
-      warnings,
+      warnings: hasBackendComponents
+        ? [
+            `Client-side React frontend is runnable in browser. Backend endpoints (${foundBackendPkgs.join(', ') || 'server.ts'}) are hosted separately.`,
+          ]
+        : warnings,
     };
   }
 
-  // 3. Check for standard HTML/CSS/JS project
+  // 2. Check for standard HTML/CSS/JS project
   const hasIndexHtml = filePaths.has('index.html');
   const anyHtmlFile = Array.from(filePaths).find((p) => p.endsWith('.html'));
 
   if (hasIndexHtml || anyHtmlFile) {
+    const hasBackendComponents =
+      foundBackendPkgs.length > 0 || hasServerFiles || hasPythonBackend || hasJavaOrGoBackend;
+
     return {
       type: 'html',
-      title: 'HTML / CSS / JavaScript Project',
+      title: hasBackendComponents
+        ? 'HTML Web Project (Frontend Runnable)'
+        : 'HTML / CSS / JavaScript Project',
       description:
         'Standard client-side web project. Runs directly in an isolated, sandboxed virtual browser runtime.',
       entryPoint: hasIndexHtml ? 'index.html' : anyHtmlFile,
       isRunnable: true,
       dependencies,
-      warnings,
+      warnings: hasBackendComponents
+        ? ['Running client HTML in browser sandbox (backend files hosted separately).']
+        : warnings,
+    };
+  }
+
+  // 3. Pure backend server (Express API, Node CLI, Python, Java with NO frontend UI)
+  if (
+    foundBackendPkgs.length > 0 ||
+    hasServerFiles ||
+    hasPythonBackend ||
+    hasJavaOrGoBackend
+  ) {
+    const reasons: string[] = [];
+    if (foundBackendPkgs.length > 0) {
+      reasons.push(`Dependencies: ${foundBackendPkgs.join(', ')}`);
+    }
+    if (hasPythonBackend) reasons.push('Python / Django / Flask backend');
+    if (hasJavaOrGoBackend) reasons.push('Go / Java backend');
+    if (hasServerFiles && foundBackendPkgs.length === 0) {
+      reasons.push('Node.js server files detected without client HTML/React UI');
+    }
+
+    return {
+      type: 'unsupported-backend',
+      title: 'Server-side / Backend Application',
+      description:
+        'This repository appears to be a pure server-side/backend application without a client-side HTML or React UI. Browser execution is strictly limited to web client frontends. You can inspect and edit all code in the Monaco Editor.',
+      isRunnable: false,
+      dependencies,
+      warnings: reasons,
     };
   }
 
