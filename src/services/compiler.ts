@@ -260,7 +260,7 @@ export async function compileReactViteProject(
   }
 
   // Prepare external package import maps
-  // Standard React + React DOM mappings
+  // Standard React + React DOM mappings using React 18 for stable esm.sh browser loading
   const importMapImports: Record<string, string> = {
     react: 'https://esm.sh/react@18.3.1?dev',
     'react/jsx-runtime': 'https://esm.sh/react@18.3.1/jsx-runtime?dev',
@@ -477,7 +477,14 @@ ${importMapJson}
 
   const runnerScript = `
     <script type="module">
-      import '${entryBlobUrl}';
+      import('${entryBlobUrl}').catch(err => {
+        console.error("Runtime error mounting application:", err);
+        const root = document.getElementById('root') || document.body;
+        root.innerHTML = \`<div style="padding: 24px; font-family: monospace; color: #ef4444; background: #fee2e2; border-radius: 8px; margin: 16px;">
+          <h3 style="margin: 0 0 8px 0; font-weight: bold;">Application Runtime Error</h3>
+          <pre style="white-space: pre-wrap; font-size: 12px;">\${err.stack || err.message || err}</pre>
+        </div>\`;
+      });
     </script>
   `;
 
